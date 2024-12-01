@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Midible Example</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<h1>MIDI Recorder and Player</h1>
+<p>Record MIDI input from a BLE MIDI device and play it back in the browser.</p>
+
+<button id="connect">Connect BLE MIDI Device</button>
+<button id="start-recording" disabled>Start Recording</button>
+<button id="stop-recording" disabled>Stop Recording</button>
+<button id="play-recording" disabled>Play Recording</button>
+
+<div class="log" id="log">Logs will appear here...</div>
+
+<script type="module">
+    import {
+        DeviceConnector,
+        MIDI_SERVICE_UID,
+        MIDI_IO_CHARACTERISTIC_UID,
+        MidiPacketParser,
+        ControlChangeFunctionMap
+    } from "../dist/midible.es.js";
+
+    let connectDevice = null;
+    let midiEvents = []; // Store MIDI events
+    let recorder, synth;
+    const logElement = document.getElementById("log");
+
+    function logMessage(message) {
+        logElement.innerHTML += `<div>${message}</div>`;
+        logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    document.getElementById("connect").addEventListener("click", async () => {
+        try {
+            logMessage("Requesting Bluetooth MIDI device...");
+            const device = await DeviceConnector.connect();
+
+            logMessage(`Connected to: ${device.name || "Unknown Device"}`);
+            connectDevice = device;
+
+            connectDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+            const server = await connectDevice.gatt.connect();
+            const service = await server.getPrimaryService(MIDI_SERVICE_UID);
+            const characteristic = await service.getCharacteristic(MIDI_IO_CHARACTERISTIC_UID);
+
+            await characteristic.startNotifications();
+            characteristic.addEventListener('characteristicvaluechanged', handleMidiMessageReceived);
+
+            logMessage("Connected to MIDI service. Ready to receive messages.");
+            document.getElementById("start-recording").disabled = false;
+        } catch (error) {
+            logMessage(`Error: ${error.message}`);
+        }
+    });
+
+    document.getElementById("start-recording").addEventListener("click", () => {
+        logMessage("Starting recording...");
+        midiEvents = []; // Reset recorded events
+        document.getElementById("stop-recording").disabled = false;
+        document.getElementById("start-recording").disabled = true;
+    });
+
+    document.getElementById("stop-recording").addEventListener("click", async () => {
+        logMessage("Stopping recording...");
+        const midiFile = createMidiFile(midiEvents);
+        logMessage("MIDI recording saved.");
+
+        document.getElementById("play-recording").disabled = false;
+        document.getElementById("stop-recording").disabled = true;
+
+        // Allow playback
+        document.getElementById("play-recording").addEventListener("click", () => {
+            playMidiFile(midiFile);
+        });
+    });
+
+    function isTimestampByte(byte) {
+        return (byte & 0x80) !== 0
+    }
+
+    function isDataByte(byte) {
+        return (byte & 0x80) === 0;
+    }
+
+    function getTimestampFromBytes(headerByte, timestampByte) {
+        const timestampHigh = headerByte & 0x3F; // 下位6ビット (0x3F = 0b00111111)
+        const timestampLow = timestampByte & 0x7F; // 下位7ビット (0x7F = 0b01111111)
+        return (timestampHigh << 7) | timestampLow;
+    }
+
+    function getMessageType(statusByte) {
+        if ((statusByte & 0x80) === 0) {
+            console.error("Invalid Status Byte: This is a Data Byte.");
+            return "Unknown Message Type";
+        }
+
+        const shiftedStatusByte = statusByte >> 4; // 上位4ビットを取得
+        const val = shiftedStatusByte & 0x0F;     // bit 6-4 を抽出
+
+        const messageTypes = {
+            0x8: "Note Off",
+            0x9: "Note On",
+            0xA: "Polyphonic Key Pressure",
+            0xB: "Control Change",
+            0xC: "Program Change",
+            0xD: "Channel Pressure",
+            0xE: "Pitch Bend Change",
+            0xF: "System Message"
+        };
+
+        return messageTypes[val] || "Unknown Message Type";
+    }
+
+
+    function getChannel(statusByte) {
+        const channel = statusByte & 0x0F; // 下位4ビット
+        return channel;
+    }
+
+    function handleMidiMessageReceived(event) {
+        const eventData = MidiPacketParser.toUint8Array(event.target.value)
+        const headerByte = eventData[0];
+        const firstMessageTimestamp = eventData[1];
+        const timestamp = getTimestampFromBytes(headerByte, firstMessageTimestamp);
+        const messageType = getMessageType(eventData[2]);
+        const channel = getChannel(eventData[2]);
+        if (messageType === 'Control Change') {
+            //when status byte indicates Control Change
+            //Midi data: second byte is the control number
+            const controlNumber = eventData[3];
+            const controlFunction = ControlChangeFunctionMap[controlNumber] || "Undefined";
+            //Midi data: third byte is the control value
+            const controlValue = eventData[4];
+            const isTimestamp = isTimestampByte(eventData[5]);
+            if (isTimestamp) {
+                // second timestamp is an elapsed time from the first timestamp
+                const timestampDelta = eventData[5] & 0x7F; // lower 7 bits
+                const secondTimestamp = timestamp + timestampDelta; // add the delta to the first timestamp
+                if (isDataByte(eventData[6])) {
+                    //data byte process should consider before status cuz this seems to be running status
+                } else {
+                    //if it's not a data byte, then next byte must be status byte
+                    const messageType = getMessageType(eventData[6]);
+                    const channel = getChannel(eventData[6]);
+                    console.log(`Status Byte: ${messageType}, Channel: ${channel}`);
+                    //todo move this to another project
+                }
+
+                const leftMidiData = eventData.slice(6);
+                logMessage(`Timestamp: ${timestamp}ms,Message Type: ${messageType},Channel: ${channel},Control Number: ${controlNumber},Control Value: ${controlValue}, Timestamp(second): ${secondTimestamp}ms, Left Midi Data (Decimal): ${leftMidiData.join(', ')}`);
+            } else {
+                //if there is no timestamp byte, the next byte is the left midi data
+                //since status byte will not appear right after midi data
+                const leftMidiData = eventData.slice(5);
+                logMessage(`Timestamp: ${timestamp}ms,Message Type: ${messageType},Channel: ${channel},Control Number: ${controlNumber},Control Value: ${controlValue},Left Midi Data (Decimal): ${leftMidiData.join(', ')}`);
+            }
+        } else {
+            const leftMidiData = eventData.slice(3);
+            logMessage(`
+            Timestamp: ${timestamp}ms,
+            Message Type: ${messageType},
+            Channel: ${channel},
+            Left Midi Data: ${leftMidiData.join(', ')}
+        `);
+        }
+    }
+
+    function createMidiFile(events) {
+        const midi = new Tone.Midi();
+        const track = midi.addTrack();
+        events.forEach(event => {
+            const note = midiToNoteName(event[1]);
+            if (event[0] === 144 && event[2] > 0) { // Note On
+                track.addNote({midi: event[1], time: midi.ticksToSeconds(track.ticks)});
+            } else if (event[0] === 128 || event[2] === 0) { // Note Off
+                track.notes.find(n => n.midi === event[1] && !n.endTime).endTime = midi.ticksToSeconds(track.ticks);
+            }
+        });
+        return midi;
+    }
+
+    function playMidiFile(midiFile) {
+        const midiData = new Tone.Midi(midiFile);
+        midiData.tracks.forEach(track => {
+            const synth = new Tone.PolySynth(Tone.Synth).toDestination();
+            track.notes.forEach(note => {
+                synth.triggerAttackRelease(note.name, note.duration, note.time);
+            });
+        });
+        logMessage("Playing MIDI recording...");
+    }
+
+    function midiToNoteName(noteNumber) {
+        const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const octave = Math.floor(noteNumber / 12) - 1;
+        return notes[noteNumber % 12] + octave;
+    }
+
+    function onDisconnected() {
+        logMessage("Device disconnected.");
+        document.getElementById("connect").disabled = false;
+        document.getElementById("start-recording").disabled = true;
+        document.getElementById("stop-recording").disabled = true;
+        document.getElementById("play-recording").disabled = true;
+    }
+</script>
+</body>
+</html>

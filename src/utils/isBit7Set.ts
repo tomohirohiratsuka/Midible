@@ -1,0 +1,1 @@
+export const isBit7Set = (byte: number): boolean => (byte & 0x80) !== 0;
