@@ -25,6 +25,13 @@ export class MidiPacketQueue {
     }
 
     /**
+     * Clear the queue
+     */
+    clear() {
+        this.queue = [];
+    }
+
+    /**
      * Convert a MIDI packet to a Uint8Array
      * @param packet
      */

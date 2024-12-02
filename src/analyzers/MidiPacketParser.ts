@@ -20,26 +20,53 @@ export class MidiPacketParser {
         this.queue = new MidiPacketQueue();
     }
 
+    /**
+     * Get processed messages
+     */
     get processedMessages() {
         return this.processed;
     }
 
+    /**
+     * Get failed messages
+     */
     get failedMessages() {
         return this.failed;
     }
 
+    /**
+     * Get remaining SysEx buffer
+     */
     get remainingSysExBuffer() {
         return this.sysExBuffer;
     }
 
+    /**
+     * Set packets to be processed
+     * @param packets
+     */
     set packets(packets: DataView[]) {
         for (const packet of packets) {
             this.queue.enqueue(packet);
         }
     }
 
+    /**
+     * Append packet to the queue
+     * @param packet
+     */
     set append(packet: DataView) {
         this.queue.enqueue(packet);
+    }
+
+    /**
+     * Clear all states
+     */
+    clear() {
+        this.queue.clear();
+        this.failed = [];
+        this.processed = [];
+        this.sysExBuffer = [];
     }
 
     /**
@@ -60,54 +87,55 @@ export class MidiPacketParser {
     }
 
 
+    /**
+     * Parse midi packet
+     * @param byteArray
+     */
     parse(byteArray: Uint8Array) {
         const header = BleMidiHeader.fromByte(byteArray[0]);
-        let processIndex = 1
-        //if there's sysExBuffer then should process it first
+        let processIndex = 1;
+
+        // If there's a SysEx buffer, process it first
         if (this.sysExBuffer.length > 0) {
-            const res = this.handleSysExWhileSending(byteArray, header);
-            if (res === null) {
+            const leftByteArray = byteArray.slice(processIndex);
+            this.handleSysEx(leftByteArray, header);
+            return; // Skip further processing if SysEx is being handled
+        }
+
+        while (processIndex < byteArray.length) {
+            let timestamp: BleMidiTimestamp;
+            let status: MidiStatus;
+            const lastProcessedPacket = this.processed[this.processed.length - 1];
+
+            if (!isBit7Set(byteArray[processIndex]) && lastProcessedPacket) {
+                // Case: Running Status
+                timestamp = lastProcessedPacket.timestamp;
+                status = lastProcessedPacket.status;
+            } else {
+                // Case: New Status with timestamp or running status with new timestamp
+                const hasBoth = byteArray.slice(processIndex, processIndex + 2).every(isBit7Set);
+                if (hasBoth) {
+                    // Case: New Status with Timestamp
+                    timestamp = BleMidiTimestamp.fromByte(byteArray[processIndex]);
+                    processIndex++;
+                    status = MidiStatus.fromByte(byteArray[processIndex]);
+                    processIndex++;
+                } else {
+                    // Case: running status with new timestamp
+                    timestamp = BleMidiTimestamp.fromByte(byteArray[processIndex]);
+                    processIndex++;
+                    status = lastProcessedPacket.status;
+                }
+            }
+
+            const leftByteArray = byteArray.slice(processIndex);
+
+            if (status.name === "System Exclusive") {
+                this.handleSysEx(leftByteArray, header);
                 return;
             }
-            processIndex = res;
-        }
-        //if there's next byte then it can be only timestamp and status set, since no running status available
-        //anyway here processStartIndex's byte must be timestamp byte
-        while (processIndex < byteArray.length) {
-            const timestamp = BleMidiTimestamp.fromByte(byteArray[processIndex]);
-            processIndex++;
-            const status = MidiStatus.fromByte(byteArray[processIndex]);
-            processIndex++;
-            const leftByteArray = byteArray.slice(processIndex);
-            if (status.name === "System Exclusive") {
-                const endIndex = this.getIndexOfSysExEndStatus(leftByteArray);
-                if (endIndex === -1) {
-                    //case rest of bytes are all sysEx data
-                    const {dataArray, realTimeStatuses} = this.extractSysExDataWithRealTimeStatuses(leftByteArray);
-                    this.sysExBuffer.push(...dataArray);
-                    this.processInsertedRealTimeStatus(realTimeStatuses, header);
-                    return;
-                }
-                //case rest of bytes include sysEx data and may other status
-                const timestamp = BleMidiTimestamp.fromByte(leftByteArray[endIndex - 1]);
-                const sysExDataBytes = leftByteArray.slice(0, endIndex - 1); //exclude header and timestamp
-                const {dataArray, realTimeStatuses} = this.extractSysExDataWithRealTimeStatuses(sysExDataBytes);
-                this.processInsertedRealTimeStatus(realTimeStatuses, header);
-                const sysExData = MidiDataSystemExclusive.fromBytes(
-                    new Uint8Array(dataArray)
-                );
-                this.processed.push(
-                    new MidiMessage(
-                        new Uint8Array([header.byte, timestamp.byte, status.byte, ...dataArray]),
-                        header,
-                        timestamp,
-                        status,
-                        [sysExData]
-                    )
-                )
-                processIndex += endIndex;
-            }
-            //case: normal midi message
+
+            // Case: Normal MIDI Message
             const {nextIndex, data} = this.processMidiData(leftByteArray, status, 0);
             this.processed.push(
                 new MidiMessage(
@@ -117,56 +145,72 @@ export class MidiPacketParser {
                     status,
                     data ? [data] : []
                 )
-            )
+            );
             processIndex += nextIndex;
         }
     }
 
     /**
-     * Handle system exclusive
-     * @param byteArray
-     * @param header
-     * @return next index or null
+     * Handles System Exclusive (SysEx) processing with or without a buffer
      */
-    private handleSysExWhileSending(byteArray: Uint8Array, header: BleMidiHeader): number | null {
+    private handleSysEx(byteArray: Uint8Array, header: BleMidiHeader): void {
         const endIndex = this.getIndexOfSysExEndStatus(byteArray);
+
         if (endIndex === -1) {
-            //case: middle of sending sysEx data
-            const {dataArray, realTimeStatuses} = this.extractSysExDataWithRealTimeStatuses(byteArray);
-            this.sysExBuffer.push(...dataArray);
-            this.processInsertedRealTimeStatus(realTimeStatuses, header);
-            return null
+            // Case: middle of sending SysEx data
+            this.processSysExDataWithoutEnd(byteArray, header);
         } else {
-            //case: end of sending sysEx data
-            const timestamp = BleMidiTimestamp.fromByte(byteArray[endIndex - 1]);
-            const sysExDataBytes = byteArray.slice(1, endIndex - 1); //exclude header and timestamp
-            const {dataArray, realTimeStatuses} = this.extractSysExDataWithRealTimeStatuses(sysExDataBytes);
-            this.processInsertedRealTimeStatus(realTimeStatuses, header);
-            const finalDataArray = new Uint8Array([...this.sysExBuffer, ...dataArray]);
-            const sysExData = MidiDataSystemExclusive.fromBytes(
-                finalDataArray
-            );
-            const endSysExStatus = MidiStatus.fromByte(0xF7);
-            this.processed.push(
-                new MidiMessage(
-                    new Uint8Array([
-                        header.byte,
-                        timestamp.byte,
-                        endSysExStatus.byte,
-                        ...finalDataArray,
-                    ]),
-                    header,
-                    timestamp,
-                    endSysExStatus,
-                    [sysExData]
-                )
-            )
-            this.sysExBuffer = [];
-            return endIndex + 1;
+            // Case: end of SysEx data
+            this.processSysExDataWithEnd(byteArray, header, endIndex);
         }
     }
 
+    /**
+     * Process SysEx data without an end status (e.g., in the middle of transmission)
+     */
+    private processSysExDataWithoutEnd(byteArray: Uint8Array, header: BleMidiHeader): void {
+        const {dataArray, realTimeStatuses} = this.extractSysExDataWithRealTimeStatuses(byteArray);
+        this.sysExBuffer.push(...dataArray);
+        this.processInsertedRealTimeStatus(realTimeStatuses, header);
+    }
 
+    /**
+     * Process SysEx data with an end status (e.g., completes the SysEx message)
+     */
+    private processSysExDataWithEnd(byteArray: Uint8Array, header: BleMidiHeader, endIndex: number): void {
+        const timestamp = BleMidiTimestamp.fromByte(byteArray[endIndex - 1]);
+        const sysExDataBytes = byteArray.slice(0, endIndex - 1); // Exclude timestamp
+        const {dataArray, realTimeStatuses} = this.extractSysExDataWithRealTimeStatuses(sysExDataBytes);
+        this.processInsertedRealTimeStatus(realTimeStatuses, header);
+
+        const finalDataArray = new Uint8Array([...this.sysExBuffer, ...dataArray]);
+        const sysExData = MidiDataSystemExclusive.fromBytes(finalDataArray);
+        const endSysExStatus = MidiStatus.fromByte(0xF7);
+
+        this.processed.push(
+            new MidiMessage(
+                new Uint8Array([
+                    header.byte,
+                    timestamp.byte,
+                    endSysExStatus.byte,
+                    ...finalDataArray,
+                ]),
+                header,
+                timestamp,
+                endSysExStatus,
+                [sysExData]
+            )
+        );
+        this.sysExBuffer = [];
+    }
+
+
+    /**
+     * Handles System Exclusive (SysEx) processing
+     * @param realTimeStatuses
+     * @param header
+     * @private
+     */
     private processInsertedRealTimeStatus(
         realTimeStatuses: {
             timestamp: BleMidiTimestamp;

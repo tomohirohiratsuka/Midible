@@ -14,6 +14,7 @@ import {MidiDataMidiTimeCodeQuarterFrame} from "@/models/systemCommon/MidiDataMi
 import {MidiDataSongPositionPointer} from "@/models/systemCommon/MidiDataSongPositionPointer";
 import {MidiDataSongSelect} from "@/models/systemCommon/MidiDataSongSelect";
 import {MidiMessageData} from "@/types/MidiMessageData";
+import {MidiDataSystemExclusive} from "src/models/systemExclusive/MidiDataSystemExclusive";
 type StatusTestCase = {
     description: string;
     bytes: number[];
@@ -168,5 +169,211 @@ describe('MidiPacketParser', () => {
             expect(processedMessage.createdAt).toBeInstanceOf(Date);
             expect(parser.remainingSysExBuffer).toEqual([]);
         });
+        it('should parse multiple full midi messages', () => {
+            const parser = new MidiPacketParser();
+            const message = new Uint8Array([0x82, 0xAC, 0x90, 0x3C, 0x64, 0xAC, 0x80, 0x3C, 0x40]); // Note On for C4 with velocity 100 and Note Off for C4 with velocity 64
+            parser.parse(message);
+            expect(parser.failedMessages).toEqual([]);
+            const processed = parser.processedMessages;
+            expect(processed).toHaveLength(2);
+            expect(processed[0].status.name).toEqual('Note On');
+            expect(processed[1].status.name).toEqual('Note Off');
+        })
+        it('should parse multiple running status midi messages', () => {
+            const parser = new MidiPacketParser();
+            const message = new Uint8Array([0x82, 0xAC, 0x90, 0x3C, 0x64, 0x3C, 0x40]);
+            parser.parse(message);
+            expect(parser.failedMessages).toEqual([]);
+            const processed = parser.processedMessages;
+            expect(processed).toHaveLength(2);
+            expect(processed[0].status.name).toEqual('Note On');
+            expect((processed[0].data[0] as MidiDataNoteOn).notes).toEqual(['C'])
+            expect(processed[1].status.name).toEqual('Note On');
+            expect((processed[1].data[0]as MidiDataNoteOn).notes).toEqual(['C'])
+        })
+        it('should parse multiple running status midi messages with timestamp', () => {
+            const parser = new MidiPacketParser();
+            const message = new Uint8Array([0x82, 0xAC, 0x90, 0x3C, 0x64, 0xAD, 0x3C, 0x40]);
+            parser.parse(message);
+            expect(parser.failedMessages).toEqual([]);
+            const processed = parser.processedMessages;
+            expect(processed).toHaveLength(2);
+            expect(processed[0].timestamp.byte).toEqual(0xAC);
+            expect(processed[0].status.name).toEqual('Note On');
+            expect((processed[0].data[0] as MidiDataNoteOn).notes).toEqual(['C'])
+            expect(processed[1].timestamp.byte).toEqual(0xAD);
+            expect(processed[1].status.name).toEqual('Note On');
+            expect((processed[1].data[0]as MidiDataNoteOn).notes).toEqual(['C'])
+        })
+        it('should parse system exclusive start to end midi messages', () => {
+            const parser = new MidiPacketParser();
+            const message = new Uint8Array([0x80, 0xAC, 0xF0, 0x01, 0x02, 0x03, 0xAD, 0xF7])
+            parser.parse(message);
+            expect(parser.failedMessages).toEqual([]);
+            const processed = parser.processedMessages;
+            expect(processed).toHaveLength(1);
+            expect(processed[0].status.name).toEqual('End of Exclusive');
+            expect((processed[0].data[0] as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03]))
+            expect(processed[0].timestamp.byte).toEqual(0xAD);
+        })
+        it('should parse system exclusive start to end midi messages with real-time statuses', () => {
+            const parser = new MidiPacketParser()
+            const message = [
+                0x80,             // Header
+                0x91,             // Timestamp1
+                0xF0,             // SysEx Start
+                0x01, 0x02,       // Data1, Data2
+                0xA3,             // Timestamp2
+                0xF8,             // Real-Time Status (Timing Clock)
+                0x03,             // Data3
+                0xB5,             // Timestamp3
+                0xF7              // SysEx End
+            ]
+            parser.parse(new Uint8Array(message))
+            expect(parser.failedMessages).toEqual([])
+            const processed = parser.processedMessages
+            expect(processed).toHaveLength(2)
+            expect(processed[0].status.name).toEqual('Timing Clock')
+            expect(processed[0].timestamp.byte).toEqual(0xA3)
+            expect(processed[1].status.name).toEqual('End of Exclusive')
+            expect((processed[1].data[0] as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03]))
+            expect(processed[1].timestamp.byte).toEqual(0xB5)
+        })
+        it('should hold SysEx data in buffer', () => {
+            const parser = new MidiPacketParser()
+            const message = new Uint8Array([0x80, 0xAC, 0xF0, 0x01, 0x02, 0x03])
+            parser.parse(message)
+            expect(parser.failedMessages).toEqual([])
+            expect(parser.processedMessages).toEqual([])
+            expect(parser.remainingSysExBuffer).toEqual([0x01, 0x02, 0x03])
+        })
+        it('should process real-time status message and hold SysEx data in buffer', () => {
+            const parser = new MidiPacketParser()
+            const message = new Uint8Array([
+                0x80,
+                0xAC,
+                0xF0,
+                0x01,
+                0xA3, // Timestamp
+                0xF8, // Real-Time Status (Timing Clock)
+                0x02,
+                0x03
+            ])
+            parser.parse(message)
+            expect(parser.failedMessages).toEqual([])
+            expect(parser.processedMessages).toHaveLength(1)
+            expect(parser.processedMessages[0].status.name).toEqual('Timing Clock')
+            expect(parser.remainingSysExBuffer).toEqual([0x01, 0x02, 0x03])
+        })
+        it('should append sysex data when buffer exists', () => {
+            const parser = new MidiPacketParser()
+            const message1 = new Uint8Array([0x80, 0xAC, 0xF0, 0x01, 0x02])
+            const message2 = new Uint8Array([0x80, 0x03])
+            parser.parse(message1)
+            parser.parse(message2)
+            expect(parser.failedMessages).toEqual([])
+            expect(parser.processedMessages).toEqual([])
+            expect(parser.remainingSysExBuffer).toEqual([0x01, 0x02, 0x03])
+        })
+        it('should append SysEx data when buffer exists and real-time status message is received', () => {
+            const parser = new MidiPacketParser()
+            const message1 = new Uint8Array([
+                0x80,
+                0xAC,
+                0xF0,
+                0x01,
+                0x02,
+                0xA3, // Timestamp
+                0xF8, // Real-Time Status (Timing Clock)
+            ])
+            const message2 = new Uint8Array([
+                0x80,
+                0xA3, // Timestamp
+                0xF8, // Real-Time Status (Timing Clock)
+                0x03
+            ])
+            parser.parse(message1)
+            parser.parse(message2)
+            expect(parser.failedMessages).toEqual([])
+            expect(parser.processedMessages).toHaveLength(2)
+            expect(parser.processedMessages[0].status.name).toEqual('Timing Clock')
+            expect(parser.processedMessages[1].status.name).toEqual('Timing Clock')
+            expect(parser.remainingSysExBuffer).toEqual([0x01, 0x02, 0x03])
+        })
+        it('should process SysEx message when SysEx end is received', () => {
+            const parser = new MidiPacketParser()
+            const message1 = new Uint8Array([
+                0x80,
+                0xAC,
+                0xF0,
+                0x01,
+                0x02,
+            ])
+            const message2 = new Uint8Array([
+                0x80,
+                0x03,
+                0x04,
+                0xAD,
+                0xF7
+            ])
+            parser.parse(message1)
+            parser.parse(message2)
+            expect(parser.failedMessages).toEqual([])
+            expect(parser.processedMessages).toHaveLength(1)
+            expect(parser.processedMessages[0].status.name).toEqual('End of Exclusive')
+            expect(parser.processedMessages[0].timestamp.byte).toEqual(0xAD)
+            expect((parser.processedMessages[0].data[0] as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03, 0x04]))
+            expect(parser.remainingSysExBuffer).toEqual([])
+        })
+        it('should process SysEx message when SysEx end is received with real-time status message', () => {
+            const parser = new MidiPacketParser()
+            const message1 = new Uint8Array([
+                0x80,
+                0xAC,
+                0xF0,
+                0x01,
+                0x02,
+            ])
+            const message2 = new Uint8Array([
+                0x80,
+                0x03,
+                0x04,
+                0xAD,
+                0xF8,
+                0x05,
+                0xAE,
+                0xF7
+            ])
+            parser.parse(message1)
+            parser.parse(message2)
+            expect(parser.failedMessages).toEqual([])
+            expect(parser.processedMessages).toHaveLength(2)
+            expect(parser.processedMessages[0].status.name).toEqual('Timing Clock')
+            expect(parser.processedMessages[1].status.name).toEqual('End of Exclusive')
+            expect(parser.processedMessages[1].timestamp.byte).toEqual(0xAE)
+            expect((parser.processedMessages[1].data[0] as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05]))
+            expect(parser.remainingSysExBuffer).toEqual([])
+        })
+        it('should parse SysEx start message after full midi message', () => {
+            const parser = new MidiPacketParser()
+            const message = new Uint8Array([
+                0x82,
+                0xAC,
+                0x90, // Note On
+                0x3C,
+                0x64,
+                0xAD,
+                0xF0, // SysEx Start
+                0x01,
+            ])
+            parser.parse(message)
+            expect(parser.failedMessages).toEqual([])
+            expect(parser.processedMessages).toHaveLength(1)
+            expect(parser.processedMessages[0].status.name).toEqual('Note On')
+            expect(parser.remainingSysExBuffer).toEqual([0x01])
+        })
+    })
+    describe('processQueue', () => {
+
     })
 })
