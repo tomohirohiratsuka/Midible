@@ -10,7 +10,7 @@ export class MidiDataSongPositionPointer extends MidiData {
         super(bytes);
     }
 
-    static fromByte(bytes: [number, number]) {
+    static fromBytes(bytes: [number, number]): MidiDataSongPositionPointer {
         super.validate(bytes);
         const lsb = bytes[0];
         const msb = bytes[1];

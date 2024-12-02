@@ -20,7 +20,7 @@ export class MidiDataMidiTimeCodeQuarterFrame extends MidiData {
         super(bytes);
     }
 
-    static fromByte(bytes: [number]) {
+    static fromBytes(bytes: [number]): MidiDataMidiTimeCodeQuarterFrame {
         super.validate(bytes);
         const dataByte = bytes[0];
         const messageType = (dataByte >> 4) & 0x07;

@@ -8,9 +8,12 @@ export class MidiMessage {
         public bytes: Uint8Array,// [header, timestamp, status, data, data] | [header, timestamp, status, data] | [header, timestamp, status]
         public header: BleMidiHeader,
         public timestamp: BleMidiTimestamp,
-        public timestampMs: number,
         public status: MidiStatus,
         public data: MidiMessageData[],
         public createdAt: Date = new Date()
     ) {}
+
+    get timestampMs(): number {
+        return this.header.timestampHigh << 7 | this.timestamp.timestampLow;
+    }
 }

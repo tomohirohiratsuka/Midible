@@ -10,7 +10,7 @@ export class MidiDataSongSelect extends MidiData {
         super(bytes);
     }
 
-    static fromByte(bytes: [number]) {
+    static fromBytes(bytes: [number]): MidiDataSongSelect {
         super.validate(bytes);
         const value = bytes[0];
         return new MidiDataSongSelect(bytes, value);

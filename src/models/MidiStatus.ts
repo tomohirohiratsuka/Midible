@@ -7,7 +7,7 @@ import {
 
 export class MidiStatus {
     private constructor(
-        public byte: StatusMessageKey,
+        public byte: number,
         public group: MidiStatusGroup | null,
         public name: StatusMessageType | null,
         public channel: number | null // System Common & Real-Time メッセージにはチャンネルがない
@@ -27,7 +27,7 @@ export class MidiStatus {
         // extract channel when group is Channel Voice
         const channel = group === "Channel Voice" ? byte & 0x0F : null;
 
-        return new MidiStatus(key, group, name, channel);
+        return new MidiStatus(byte, group, name, channel);
     }
 
     private static validate(byte: number): void {

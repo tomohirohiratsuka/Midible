@@ -1,25 +1,17 @@
 import {MidiStatus} from "@/models/MidiStatus.ts";
-import {MidiDataParser} from "@/analyzers/MidiDataParser.ts";
 import {isBit7Set} from "@/utils/isBit7Set.ts";
-import {MidiDataNoteOff} from "@/models/channelVoice/MidiDataNoteOff.ts";
-import {MidiDataNoteOn} from "@/models/channelVoice/MidiDataNoteOn.ts";
-import {MidiDataPolyphonicKeyPressure} from "@/models/channelVoice/MidiDataPolyphonicKeyPressure.ts";
-import {MidiDataControlChange} from "@/models/channelVoice/MidiDataControlChange.ts";
-import {MidiDataProgramChange} from "@/models/channelVoice/MidiDataProgramChange.ts";
-import {MidiDataChannelPressure} from "@/models/channelVoice/MidiDataChannelPressure.ts";
-import {MidiDataPitchBendChange} from "@/models/channelVoice/MidiDataPitchBendChange.ts";
-import {MidiDataMidiTimeCodeQuarterFrame} from "@/models/systemCommon/MidiDataMidiTimeCodeQuarterFrame.ts";
-import {MidiDataSongPositionPointer} from "@/models/systemCommon/MidiDataSongPositionPointer.ts";
-import {MidiDataSongSelect} from "@/models/systemCommon/MidiDataSongSelect.ts";
 import {MidiPacketQueue} from "@/analyzers/MidiPacketQue.ts";
 import {BleMidiHeader} from "@/models/ble/BleMidiHeader.ts";
 import {BleMidiTimestamp} from "@/models/ble/BleMidiTimestamp.ts";
 import {MidiMessage} from "@/models/MidiMessage.ts";
 import {MidiMessageData} from "@/types/MidiMessageData.ts";
 import {MidiDataSystemExclusive} from "@/models/systemExclusive/MidiDataSystemExclusive.ts";
+import {MidiDataParser} from "@/analyzers/MidiDataParser.ts";
+import {toDataBytesTuple} from "@/utils/toDataBytesTuple.ts";
 
 
 export class MidiPacketParser {
+    private failed: Uint8Array[] = [];
     private processed: MidiMessage[] = [];
     private queue: MidiPacketQueue;
     private sysExBuffer: number[] = [];
@@ -32,6 +24,24 @@ export class MidiPacketParser {
         return this.processed;
     }
 
+    get failedMessages() {
+        return this.failed;
+    }
+
+    get remainingSysExBuffer() {
+        return this.sysExBuffer;
+    }
+
+    set packets(packets: DataView[]) {
+        for (const packet of packets) {
+            this.queue.enqueue(packet);
+        }
+    }
+
+    set append(packet: DataView) {
+        this.queue.enqueue(packet);
+    }
+
     /**
      * Process midi packets
      */
@@ -39,7 +49,12 @@ export class MidiPacketParser {
         while (!this.queue.isEmpty()) {
             const packet = this.queue.dequeue();
             if (packet) {
-                this.parse(packet);
+                try {
+                    this.parse(packet);
+                } catch (e) {
+                    console.error(`Error while parsing packet: ${e}, you can find the packet in failed getter`);
+                    this.failed.push(packet);
+                }
             }
         }
     }
@@ -61,7 +76,6 @@ export class MidiPacketParser {
         while (processIndex < byteArray.length) {
             const timestamp = BleMidiTimestamp.fromByte(byteArray[processIndex]);
             processIndex++;
-            const timestampInMs = this.calTimestampInMs(header, timestamp);
             const status = MidiStatus.fromByte(byteArray[processIndex]);
             processIndex++;
             const leftByteArray = byteArray.slice(processIndex);
@@ -76,7 +90,6 @@ export class MidiPacketParser {
                 }
                 //case rest of bytes include sysEx data and may other status
                 const timestamp = BleMidiTimestamp.fromByte(leftByteArray[endIndex - 1]);
-                const timestampInMs = this.calTimestampInMs(header, timestamp);
                 const sysExDataBytes = leftByteArray.slice(0, endIndex - 1); //exclude header and timestamp
                 const {dataArray, realTimeStatuses} = this.extractSysExDataWithRealTimeStatuses(sysExDataBytes);
                 this.processInsertedRealTimeStatus(realTimeStatuses, header);
@@ -88,7 +101,6 @@ export class MidiPacketParser {
                         new Uint8Array([header.byte, timestamp.byte, status.byte, ...dataArray]),
                         header,
                         timestamp,
-                        timestampInMs,
                         status,
                         [sysExData]
                     )
@@ -102,7 +114,6 @@ export class MidiPacketParser {
                     new Uint8Array([header.byte, timestamp.byte, status.byte, ...leftByteArray.slice(0, nextIndex)]),
                     header,
                     timestamp,
-                    timestampInMs,
                     status,
                     data ? [data] : []
                 )
@@ -117,7 +128,7 @@ export class MidiPacketParser {
      * @param header
      * @return next index or null
      */
-    handleSysExWhileSending(byteArray: Uint8Array, header: BleMidiHeader): number | null {
+    private handleSysExWhileSending(byteArray: Uint8Array, header: BleMidiHeader): number | null {
         const endIndex = this.getIndexOfSysExEndStatus(byteArray);
         if (endIndex === -1) {
             //case: middle of sending sysEx data
@@ -128,7 +139,6 @@ export class MidiPacketParser {
         } else {
             //case: end of sending sysEx data
             const timestamp = BleMidiTimestamp.fromByte(byteArray[endIndex - 1]);
-            const timestampInMs = this.calTimestampInMs(header, timestamp);
             const sysExDataBytes = byteArray.slice(1, endIndex - 1); //exclude header and timestamp
             const {dataArray, realTimeStatuses} = this.extractSysExDataWithRealTimeStatuses(sysExDataBytes);
             this.processInsertedRealTimeStatus(realTimeStatuses, header);
@@ -147,7 +157,6 @@ export class MidiPacketParser {
                     ]),
                     header,
                     timestamp,
-                    timestampInMs,
                     endSysExStatus,
                     [sysExData]
                 )
@@ -166,27 +175,18 @@ export class MidiPacketParser {
         header: BleMidiHeader
     ) {
         for (const {timestamp, status} of realTimeStatuses) {
-            const timestampInMs = this.calTimestampInMs(header, timestamp);
             this.processed.push(
                 new MidiMessage(
                     new Uint8Array([header.byte, timestamp.byte, status.byte]),
                     header,
                     timestamp,
-                    timestampInMs,
                     status,
                     [] //since real-time status doesn't have data
                 ));
         }
     }
 
-    /**
-     * Calculate the timestamp in milliseconds
-     * @param header
-     * @param timestamp
-     */
-    calTimestampInMs(header: BleMidiHeader, timestamp: BleMidiTimestamp): number {
-        return header.timestampHigh << 7 | timestamp.timestampLow;
-    }
+
 
     /**
      * Process midi data
@@ -194,7 +194,7 @@ export class MidiPacketParser {
      * @param status
      * @param startIndex
      */
-    processMidiData(
+    private processMidiData(
         byteArray: Uint8Array,
         status: MidiStatus,
         startIndex: number
@@ -202,74 +202,14 @@ export class MidiPacketParser {
         nextIndex: number,
         data?: MidiMessageData
     } {
-        switch (status.name) {
-            //channel voice
-            case "Note Off": {
-                const secondByte = byteArray[startIndex];
-                const thirdByte = byteArray[startIndex + 1];
-                return {nextIndex: startIndex + 2, data: MidiDataNoteOff.fromBytes([secondByte, thirdByte])}
-            }
-            case "Note On": {
-                const secondByte = byteArray[startIndex];
-                const thirdByte = byteArray[startIndex + 1];
-                return {nextIndex: startIndex + 2, data: MidiDataNoteOn.fromBytes([secondByte, thirdByte])}
-            }
-            case "Polyphonic Key Pressure": {
-                const secondByte = byteArray[startIndex];
-                const thirdByte = byteArray[startIndex + 1];
-                return {
-                    nextIndex: startIndex + 2,
-                    data: MidiDataPolyphonicKeyPressure.fromBytes([secondByte, thirdByte])
-                }
-            }
-            case "Control Change": {
-                const secondByte = byteArray[startIndex];
-                const thirdByte = byteArray[startIndex + 1];
-                return {nextIndex: startIndex + 2, data: MidiDataControlChange.fromBytes([secondByte, thirdByte])}
-            }
-            case "Program Change": {
-                const secondByte = byteArray[startIndex];
-                return {nextIndex: startIndex + 1, data: MidiDataProgramChange.fromBytes([secondByte])}
-            }
-            case "Channel Pressure": {
-                const secondByte = byteArray[startIndex];
-                return {nextIndex: startIndex + 1, data: MidiDataChannelPressure.fromBytes([secondByte])}
-            }
-            case "Pitch Bend Change": {
-                const secondByte = byteArray[startIndex];
-                const thirdByte = byteArray[startIndex + 1];
-                return {nextIndex: startIndex + 2, data: MidiDataPitchBendChange.fromBytes([secondByte, thirdByte])}
-            }
-            //system common, system exclusive handle separately
-            case "MIDI Time Code Quarter Frame": {
-                const secondByte = byteArray[startIndex];
-                return {nextIndex: startIndex + 1, data: MidiDataMidiTimeCodeQuarterFrame.fromByte([secondByte])}
-            }
-            case "Song Position Pointer": {
-                const secondByte = byteArray[startIndex];
-                const thirdByte = byteArray[startIndex + 1];
-                return {nextIndex: startIndex + 2, data: MidiDataSongPositionPointer.fromByte([secondByte, thirdByte])}
-            }
-            case "Song Select": {
-                const secondByte = byteArray[startIndex];
-                return {nextIndex: startIndex + 1, data: MidiDataSongSelect.fromByte([secondByte])}
-            }
-            case "Tune Request": {
-                return {nextIndex: startIndex}
-            }
-            //system real time
-            case "Timing Clock":
-            case "Start":
-            case "Continue":
-            case "Stop":
-            case "Active Sensing":
-            case "Reset": {
-                return {nextIndex: startIndex}
-            }
-            default: {
-                throw new Error(`Unknown status name ${status.name}`);
-            }
+        const dataLength = MidiDataParser.getDataBytesLength(status);
+        if (dataLength === 0) {
+            return {nextIndex: startIndex};
         }
+        const dataBytes = byteArray.slice(startIndex, startIndex + dataLength);
+        const tupleDataBytes = toDataBytesTuple([...dataBytes]);
+        const data = MidiDataParser.parseData(status, tupleDataBytes);
+        return {nextIndex: startIndex + dataLength, data};
     }
 
 
@@ -277,7 +217,7 @@ export class MidiPacketParser {
      * Get the index of the system exclusive end status
      * @param byteArray
      */
-    getIndexOfSysExEndStatus(byteArray: Uint8Array): number {
+    private getIndexOfSysExEndStatus(byteArray: Uint8Array): number {
         return byteArray.indexOf(0xF7)
     }
 
@@ -285,7 +225,7 @@ export class MidiPacketParser {
      * Extract system exclusive data with real-time statuses
      * @param byteArray
      */
-    extractSysExDataWithRealTimeStatuses(byteArray: Uint8Array): {
+    private extractSysExDataWithRealTimeStatuses(byteArray: Uint8Array): {
         dataArray: Uint8Array,
         realTimeStatuses: { timestamp: BleMidiTimestamp, status: MidiStatus; }[]
     } {
