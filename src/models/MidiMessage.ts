@@ -5,11 +5,11 @@ import {MidiMessageData} from "@/types/MidiMessageData.ts";
 
 export class MidiMessage {
     constructor(
-        public bytes: Uint8Array,// [header, timestamp, status, data, data] | [header, timestamp, status, data] | [header, timestamp, status]
+        public bytes: Uint8Array,
         public header: BleMidiHeader,
         public timestamp: BleMidiTimestamp,
         public status: MidiStatus,
-        public data: MidiMessageData[],
+        public data: MidiMessageData | undefined = undefined,
         public createdAt: Date = new Date()
     ) {}
 

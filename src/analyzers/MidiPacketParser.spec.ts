@@ -15,114 +15,115 @@ import {MidiDataSongPositionPointer} from "@/models/systemCommon/MidiDataSongPos
 import {MidiDataSongSelect} from "@/models/systemCommon/MidiDataSongSelect";
 import {MidiMessageData} from "@/types/MidiMessageData";
 import {MidiDataSystemExclusive} from "src/models/systemExclusive/MidiDataSystemExclusive";
+
 type StatusTestCase = {
     description: string;
     bytes: number[];
-    expectedData: MidiMessageData[];
+    expectedData?: MidiMessageData;
     compareDataKeys: string[]; // Keys to compare in data object
 };
 const testCases: StatusTestCase[] = [
     {
         description: "Note On",
         bytes: [0x82, 0xAC, 0x90, 0x3C, 0x64], // Example: Note On for C4 with velocity 100
-        expectedData: [MidiDataNoteOn.fromBytes([0x3C, 0x64])],
+        expectedData: MidiDataNoteOn.fromBytes([0x3C, 0x64]),
         compareDataKeys: ['bytes', 'notes', 'octave', 'velocity']
     },
     {
         description: "Note Off",
         bytes: [0x82, 0xAC, 0x80, 0x3C, 0x40], // Example: Note Off for C4 with velocity 64
-        expectedData: [MidiDataNoteOff.fromBytes([0x3C, 0x40])],
+        expectedData: MidiDataNoteOff.fromBytes([0x3C, 0x40]),
         compareDataKeys: ['bytes','notes', 'octave', 'velocity']
     },
     {
         description: "Polyphonic Key Pressure",
         bytes: [0x82, 0xAC, 0xA0, 0x3C, 0x40], // Example: Polyphonic Key Pressure for C4 with pressure 64
-        expectedData: [MidiDataPolyphonicKeyPressure.fromBytes([0x3C, 0x40])],
+        expectedData: MidiDataPolyphonicKeyPressure.fromBytes([0x3C, 0x40]),
         compareDataKeys: ['bytes','notes', 'octave', 'value']
     },
     {
         description: "Control Change",
         bytes: [0x82, 0xAC, 0xB0, 0x07, 0x40], // Example: Control Change for volume with value 64
-        expectedData: [MidiDataControlChange.fromBytes([0x07, 0x40])],
+        expectedData: MidiDataControlChange.fromBytes([0x07, 0x40]),
         compareDataKeys: ['bytes','controller', 'value']
     },
     {
         description: "Program Change",
         bytes: [0x82, 0xAC, 0xC0, 0x07], // Example: Program Change to program 7
-        expectedData: [MidiDataProgramChange.fromBytes([0x07])],
+        expectedData: MidiDataProgramChange.fromBytes([0x07]),
         compareDataKeys: ['bytes', 'program']
     },
     {
         description: "Channel Pressure",
         bytes: [0x82, 0xAC, 0xD0, 0x40], // Example: Channel Pressure with pressure 64
-        expectedData: [MidiDataChannelPressure.fromBytes([0x40])],
+        expectedData: MidiDataChannelPressure.fromBytes([0x40]),
         compareDataKeys: ['bytes', 'value']
     },
     {
         description: "Pitch Bend",
         bytes: [0x82, 0xAC, 0xE0, 0x40, 0x40], // Example: Pitch Bend with value 0x4040
-        expectedData: [MidiDataPitchBendChange.fromBytes([0x40, 0x40])],
+        expectedData: MidiDataPitchBendChange.fromBytes([0x40, 0x40]),
         compareDataKeys: ['bytes', 'value']
     },
     {
         description: 'Midi Time Code Quarter Frame',
         bytes: [0x82, 0xAC, 0xF1, 0x40], // Example: Midi Time Code Quarter Frame with value 0x40
-        expectedData: [MidiDataMidiTimeCodeQuarterFrame.fromBytes([0x40])],
+        expectedData: MidiDataMidiTimeCodeQuarterFrame.fromBytes([0x40]),
         compareDataKeys: ['bytes', 'type',  'value']
     },
     {
         description: 'Song Position Pointer',
         bytes: [0x82, 0xAC, 0xF2, 0x40, 0x40], // Example: Song Position Pointer with value 0x4040
-        expectedData: [MidiDataSongPositionPointer.fromBytes([0x40, 0x40])],
+        expectedData: MidiDataSongPositionPointer.fromBytes([0x40, 0x40]),
         compareDataKeys: ['bytes', 'position']
     },
     {
         description: 'Song Select',
         bytes: [0x82, 0xAC, 0xF3, 0x40], // Example: Song Select with value 0x40
-        expectedData: [MidiDataSongSelect.fromBytes([0x40])],
+        expectedData: MidiDataSongSelect.fromBytes([0x40]),
         compareDataKeys: ['bytes', 'value']
     },
     {
         description: 'Tune Request',
         bytes: [0x82, 0xAC, 0xF6], // Example: Tune Request
-        expectedData: [],
-        compareDataKeys: ['bytes']
+        expectedData: undefined,
+        compareDataKeys: []
     },
     {
         description: 'Timing Clock',
         bytes: [0x82, 0xAC, 0xF8], // Example: Timing Clock
-        expectedData: [],
-        compareDataKeys: ['bytes']
+        expectedData: undefined,
+        compareDataKeys: []
     },
     {
         description: 'Start',
         bytes: [0x82, 0xAC, 0xFA], // Example: Start
-        expectedData: [],
-        compareDataKeys: ['bytes']
+        expectedData: undefined,
+        compareDataKeys: []
     },
     {
         description: 'Continue',
         bytes: [0x82, 0xAC, 0xFB], // Example: Continue
-        expectedData: [],
-        compareDataKeys: ['bytes']
+        expectedData: undefined,
+        compareDataKeys: []
     },
     {
         description: 'Stop',
         bytes: [0x82, 0xAC, 0xFC], // Example: Stop
-        expectedData: [],
-        compareDataKeys: ['bytes']
+        expectedData: undefined,
+        compareDataKeys: []
     },
     {
         description: 'Active Sensing',
         bytes: [0x82, 0xAC, 0xFE], // Example: Active Sensing
-        expectedData: [],
-        compareDataKeys: ['bytes']
+        expectedData: undefined,
+        compareDataKeys: []
     },
     {
         description: 'System Reset',
         bytes: [0x82, 0xAC, 0xFF], // Example: System Reset
-        expectedData: [],
-        compareDataKeys: ['bytes']
+        expectedData: undefined,
+        compareDataKeys: []
     }
 ];
 describe('MidiPacketParser', () => {
@@ -158,13 +159,9 @@ describe('MidiPacketParser', () => {
             expect(processedMessage.header.timestampHigh).toEqual(expectedMidiMessage.header.timestampHigh);
             expect(processedMessage.timestamp.timestampLow).toEqual(expectedMidiMessage.timestamp.timestampLow);
             expect(processedMessage.status.name).toEqual(expectedMidiMessage.status.name);
-            expect(processedMessage.data.length).toEqual(expectedMidiMessage.data.length);
-            for (let i = 0; i < processedMessage.data.length; i++) {
-                const processedData = processedMessage.data[i];
-                const expectedData = expectedMidiMessage.data[i];
-                for (const key of compareDataKeys) {
-                    expect((processedData as any)[key]).toEqual((expectedData as any)[key]);
-                }
+            expect(processedMessage.data).toEqual(expectedMidiMessage.data);
+            for (const key of compareDataKeys) {
+                expect((processedMessage.data as any)[key]).toEqual((expectedMidiMessage.data as any)[key]);
             }
             expect(processedMessage.createdAt).toBeInstanceOf(Date);
             expect(parser.remainingSysExBuffer).toEqual([]);
@@ -187,9 +184,9 @@ describe('MidiPacketParser', () => {
             const processed = parser.processedMessages;
             expect(processed).toHaveLength(2);
             expect(processed[0].status.name).toEqual('Note On');
-            expect((processed[0].data[0] as MidiDataNoteOn).notes).toEqual(['C'])
+            expect((processed[0].data as MidiDataNoteOn).notes).toEqual(['C'])
             expect(processed[1].status.name).toEqual('Note On');
-            expect((processed[1].data[0]as MidiDataNoteOn).notes).toEqual(['C'])
+            expect((processed[1].data as MidiDataNoteOn).notes).toEqual(['C'])
         })
         it('should parse multiple running status midi messages with timestamp', () => {
             const parser = new MidiPacketParser();
@@ -200,10 +197,10 @@ describe('MidiPacketParser', () => {
             expect(processed).toHaveLength(2);
             expect(processed[0].timestamp.byte).toEqual(0xAC);
             expect(processed[0].status.name).toEqual('Note On');
-            expect((processed[0].data[0] as MidiDataNoteOn).notes).toEqual(['C'])
+            expect((processed[0].data as MidiDataNoteOn).notes).toEqual(['C'])
             expect(processed[1].timestamp.byte).toEqual(0xAD);
             expect(processed[1].status.name).toEqual('Note On');
-            expect((processed[1].data[0]as MidiDataNoteOn).notes).toEqual(['C'])
+            expect((processed[1].data as MidiDataNoteOn).notes).toEqual(['C'])
         })
         it('should parse system exclusive start to end midi messages', () => {
             const parser = new MidiPacketParser();
@@ -213,7 +210,7 @@ describe('MidiPacketParser', () => {
             const processed = parser.processedMessages;
             expect(processed).toHaveLength(1);
             expect(processed[0].status.name).toEqual('End of Exclusive');
-            expect((processed[0].data[0] as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03]))
+            expect((processed[0].data as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03]))
             expect(processed[0].timestamp.byte).toEqual(0xAD);
         })
         it('should parse system exclusive start to end midi messages with real-time statuses', () => {
@@ -236,7 +233,7 @@ describe('MidiPacketParser', () => {
             expect(processed[0].status.name).toEqual('Timing Clock')
             expect(processed[0].timestamp.byte).toEqual(0xA3)
             expect(processed[1].status.name).toEqual('End of Exclusive')
-            expect((processed[1].data[0] as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03]))
+            expect((processed[1].data as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03]))
             expect(processed[1].timestamp.byte).toEqual(0xB5)
         })
         it('should hold SysEx data in buffer', () => {
@@ -322,7 +319,7 @@ describe('MidiPacketParser', () => {
             expect(parser.processedMessages).toHaveLength(1)
             expect(parser.processedMessages[0].status.name).toEqual('End of Exclusive')
             expect(parser.processedMessages[0].timestamp.byte).toEqual(0xAD)
-            expect((parser.processedMessages[0].data[0] as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03, 0x04]))
+            expect((parser.processedMessages[0].data as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03, 0x04]))
             expect(parser.remainingSysExBuffer).toEqual([])
         })
         it('should process SysEx message when SysEx end is received with real-time status message', () => {
@@ -351,7 +348,7 @@ describe('MidiPacketParser', () => {
             expect(parser.processedMessages[0].status.name).toEqual('Timing Clock')
             expect(parser.processedMessages[1].status.name).toEqual('End of Exclusive')
             expect(parser.processedMessages[1].timestamp.byte).toEqual(0xAE)
-            expect((parser.processedMessages[1].data[0] as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05]))
+            expect((parser.processedMessages[1].data as MidiDataSystemExclusive).bytes).toEqual(new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05]))
             expect(parser.remainingSysExBuffer).toEqual([])
         })
         it('should parse SysEx start message after full midi message', () => {

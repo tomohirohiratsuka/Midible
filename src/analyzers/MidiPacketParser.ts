@@ -143,7 +143,7 @@ export class MidiPacketParser {
                     header,
                     timestamp,
                     status,
-                    data ? [data] : []
+                    data
                 )
             );
             processIndex += nextIndex;
@@ -198,7 +198,7 @@ export class MidiPacketParser {
                 header,
                 timestamp,
                 endSysExStatus,
-                [sysExData]
+                sysExData
             )
         );
         this.sysExBuffer = [];
@@ -225,7 +225,7 @@ export class MidiPacketParser {
                     header,
                     timestamp,
                     status,
-                    [] //since real-time status doesn't have data
+                    //since real-time status doesn't have data
                 ));
         }
     }
