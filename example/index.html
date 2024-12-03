@@ -15,10 +15,17 @@
 <button id="start-recording" disabled>Start Recording</button>
 <button id="stop-recording" disabled>Stop Recording</button>
 <button id="play-recording" disabled>Play Recording</button>
+<input id="volume" type="range" min="0" max="127" value="100" step="1">
+<label for="volume" >Volume</label>
+
 
 <div class="log" id="log">Logs will appear here...</div>
 
 <script type="module">
+    import { SplendidGrandPiano} from "https://unpkg.com/smplr/dist/index.mjs";
+    const context = new AudioContext();
+    const piano = new SplendidGrandPiano(context);
+
     import {
         DeviceConnector,
         MIDI_SERVICE_UID,
@@ -35,17 +42,22 @@
 
     function logMessage(message) {
         if (typeof message === "object" && message !== null) {
-            // オブジェクトを整形して表示
             const formattedMessage = `<pre>${JSON.stringify(message, null, 2)}</pre>`;
             logElement.innerHTML += `<div>${formattedMessage}</div>`;
         } else {
-            // 通常の文字列をそのまま表示
             logElement.innerHTML += `<div>${message}</div>`;
         }
-        // スクロールを最新メッセージに合わせる
         logElement.scrollTop = logElement.scrollHeight;
     }
 
+    piano.load.then(() => {
+        logMessage("Piano loaded");
+    });
+
+    document.getElementById('volume').addEventListener('input', (e) => {
+        piano.output.setVolume(e.target.value);
+        logMessage(`Volume: ${e.target.value}`);
+    })
 
     document.getElementById("connect").addEventListener("click", async () => {
         try {
@@ -87,7 +99,7 @@
 
         // Allow playback
         document.getElementById("play-recording").addEventListener("click", () => {
-            playMidiFile();
+            playRecordedEvents();
         });
     });
 
@@ -97,13 +109,10 @@
         midiPacketParser.parse(new Uint8Array(event.target.value.buffer));
         const processedMessages = midiPacketParser.processedMessages;
 
-        // ログ出力する新しいメッセージがあるか確認
         if (processedMessages.length > loggedIndex) {
-            // 新しいメッセージをループでロギング
             for (let i = loggedIndex; i < processedMessages.length; i++) {
                 const midiEvent = processedMessages[i];
                 logMessage(midiEvent);
-                // 録音中の場合はイベントを記録
                 if (recordingStartTime !== null) {
                     recordedEvents.push({
                         ...midiEvent,
@@ -111,38 +120,47 @@
                     });
                 }
             }
-            // インデックスを更新
             loggedIndex = processedMessages.length;
         }
     }
 
-    function playMidiFile() {
+    async function playRecordedEvents() {
+        await context.resume();
+        const now = context.currentTime
         if (recordedEvents.length === 0) {
             logMessage("No recorded events to play.");
             return;
         }
-        logMessage("Playing MIDI recording...");
-        const synth = new Tone.PolySynth(Tone.Synth).toDestination();
-        const now = Tone.now();
-
-        recordedEvents.forEach((event) => {
-            const timeInSeconds = now + event.recordingTimestamp / 1000;
+        logMessage('Preparing to play MIDI recording...');
+        const noteEvents = [];
+        for(const event of recordedEvents) {
             if (event.status.name === "Note On") {
-                const note = `${event.data.notes[0]}${event.data.octave}`;
-                const scaledVelocity = event.data.velocity / 127.0;
-                console.log('on', note, timeInSeconds, scaledVelocity);
-                synth.triggerAttack(note, timeInSeconds, scaledVelocity);
-            } else if (event.status.name === "Note Off") {
-                const note = `${event.data.notes[0]}${event.data.octave}`;
-                console.log('off', note, timeInSeconds);
-                synth.triggerRelease(note, timeInSeconds);
+                const note = `${event.data.notes[0]}${event.data.octave}`
+                const velocity = event.data.velocity;
+                const startTime = now + event.recordingTimestamp / 1000;
+
+                const correspondingOffIndex = recordedEvents.findIndex((e,i) => {
+                    return i > recordedEvents.indexOf(event) && e.status.name === "Note Off" && e.data.notes[0] === event.data.notes[0] && e.data.octave === event.data.octave;
+                })
+                if (correspondingOffIndex !== -1) {
+                    const endTime = now + recordedEvents[correspondingOffIndex].recordingTimestamp / 1000;
+                    const duration = endTime - startTime;
+                    noteEvents.push({note, velocity, time: startTime, duration});
+                } else {
+                    console.warn(`No corresponding Note Off event found for Note On event: ${event}`);
+                }
             }
-        });
+        }
+        logMessage("Playing MIDI recording...");
+        noteEvents.findIndex(event => {
+            piano.play(event)
+        })
     }
 
     function onDisconnected() {
         logMessage("Device disconnected.");
         midiPacketParser.clear();
+        piano.stop()
         document.getElementById("connect").disabled = false;
         document.getElementById("start-recording").disabled = true;
         document.getElementById("stop-recording").disabled = true;
