@@ -56,6 +56,9 @@ async function connectToDevice() {
     }
 }
 ```
+**Note**
+- The `connect` method requires a user gesture to show the permission request dialog.
+  - `SecurityError: Failed to execute 'requestDevice' on 'Bluetooth': Must be handling a user gesture to show a permission request.`
 
 ---
 
