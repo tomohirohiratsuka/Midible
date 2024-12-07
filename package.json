@@ -20,7 +20,7 @@
   "exports": {
     ".": {
       "import": "./dist/midible.es.js",
-      "require": "./dist/midible.cjs.js"
+      "require": "./dist/midible.umd.js"
     },
     "./package.json": "./package.json"
   },
