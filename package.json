@@ -1,13 +1,17 @@
 {
   "name": "midible",
-  "private": true,
-  "version": "0.0.0",
-  "description": "This is a MIDI BLE library for WebBluetooth.",
+  "private": false,
+  "version": "0.1.1",
+  "description": "Midible is a library for handling MIDI over Bluetooth Low Energy (BLE) in the browser.",
   "keywords": [
     "MIDI",
     "BLE",
     "WebBluetooth"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tomohirohiratsuka/Midible"
+  },
   "author": "tomohiro.hiratsuka",
   "license": "MIT",
   "main": "dist/index.umd.js",

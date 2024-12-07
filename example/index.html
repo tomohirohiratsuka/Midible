@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Midible Example</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="http://unpkg.com/tone"></script>
 </head>
 <body>
 <h1>MIDI Recorder and Player</h1>
@@ -14,7 +13,7 @@
 <button id="connect">Connect BLE MIDI Device</button>
 <button id="start-recording" disabled>Start Recording</button>
 <button id="stop-recording" disabled>Stop Recording</button>
-<button id="play-recording" disabled>Play Recording</button>
+<button id="play-control" disabled>Play</button>
 <input id="volume" type="range" min="0" max="127" value="100" step="1">
 <label for="volume" >Volume</label>
 
@@ -22,22 +21,24 @@
 <div class="log" id="log">Logs will appear here...</div>
 
 <script type="module">
-    import { SplendidGrandPiano} from "https://unpkg.com/smplr/dist/index.mjs";
-    const context = new AudioContext();
-    const piano = new SplendidGrandPiano(context);
-
     import {
         DeviceConnector,
         MIDI_SERVICE_UID,
         MIDI_IO_CHARACTERISTIC_UID,
         MidiPacketParser,
     } from "../dist/midible.es.js";
+    import { SplendidGrandPiano} from "https://unpkg.com/smplr/dist/index.mjs";
 
     let connectDevice = null;
     const midiPacketParser = new MidiPacketParser()
     const logElement = document.getElementById("log");
     let recordingStartTime = null;
     let recordedEvents = [];
+    let playing = false;
+
+    const context = new AudioContext();
+    const piano = new SplendidGrandPiano(context);
+
 
 
     function logMessage(message) {
@@ -90,17 +91,28 @@
         midiPacketParser.clear();
         document.getElementById("stop-recording").disabled = false;
         document.getElementById("start-recording").disabled = true;
+        const playControl = document.getElementById("play-control");
+        playControl.disabled = true;
+        playControl.innerText = "Play"
     });
 
     document.getElementById("stop-recording").addEventListener("click", async () => {
         logMessage("Stopping recording...");
-        document.getElementById("play-recording").disabled = false;
+        const playControl = document.getElementById("play-control");
+        playControl.disabled = false;
+        playControl.innerText = "Play"
         document.getElementById("stop-recording").disabled = true;
+        document.getElementById("start-recording").disabled = false;
+    });
 
-        // Allow playback
-        document.getElementById("play-recording").addEventListener("click", () => {
+    document.getElementById("play-control").addEventListener("click", () => {
+        if (playing) {
+            stopPlayback();
+            document.getElementById("play-control").innerText = "Play";
+        } else {
             playRecordedEvents();
-        });
+            document.getElementById("play-control").innerText = "Stop";
+        }
     });
 
     let loggedIndex = 0;
@@ -133,6 +145,7 @@
         }
         logMessage('Preparing to play MIDI recording...');
         const noteEvents = [];
+        let maxEndTime = 0;
         for(const event of recordedEvents) {
             if (event.status.name === "Note On") {
                 const note = `${event.data.notes[0]}${event.data.octave}`
@@ -146,6 +159,9 @@
                     const endTime = now + recordedEvents[correspondingOffIndex].recordingTimestamp / 1000;
                     const duration = endTime - startTime;
                     noteEvents.push({note, velocity, time: startTime, duration});
+                    if (endTime > maxEndTime) {
+                        maxEndTime = endTime;
+                    }
                 } else {
                     console.warn(`No corresponding Note Off event found for Note On event: ${event}`);
                 }
@@ -153,18 +169,33 @@
         }
         logMessage("Playing MIDI recording...");
         noteEvents.findIndex(event => {
-            piano.play(event)
+            piano.start(event)
         })
+        setTimeout(() => {
+            logMessage("Finished playing MIDI recording.");
+            document.getElementById("play-control").innerText = "Play";
+        }, maxEndTime * 1000);
+    }
+
+    function stopPlayback() {
+        logMessage("Stopping playback...");
+        piano.stop()
+    }
+
+    function clearParserStates() {
+        logMessage("Clearing parser states...");
+        midiPacketParser.clear();
     }
 
     function onDisconnected() {
         logMessage("Device disconnected.");
-        midiPacketParser.clear();
-        piano.stop()
+        clearParserStates()
+        stopPlayback()
         document.getElementById("connect").disabled = false;
         document.getElementById("start-recording").disabled = true;
         document.getElementById("stop-recording").disabled = true;
-        document.getElementById("play-recording").disabled = true;
+        document.getElementById("play-control").disabled = true;
+        document.getElementById("play-control").innerText = "Play";
     }
 </script>
 </body>
