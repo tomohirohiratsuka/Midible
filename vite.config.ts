@@ -18,10 +18,15 @@ export default defineConfig({
             },
         },
     },
-    plugins: [dts({
-        outDir: 'dist',
-        insertTypesEntry: true,
-    }), cssInjectedByJsPlugin()],
+    plugins: [
+        dts({
+            outDir: 'dist',
+            insertTypesEntry: true,
+            rollupTypes: true,
+            include: ['src/**/*.ts'],
+        }),
+        cssInjectedByJsPlugin()
+    ],
     server: {
         open: true,
     },

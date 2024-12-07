@@ -23,21 +23,21 @@ export class MidiPacketParser {
     /**
      * Get processed messages
      */
-    get processedMessages() {
+    get processedMessages(): MidiMessage[] {
         return this.processed;
     }
 
     /**
      * Get failed messages
      */
-    get failedMessages() {
+    get failedMessages(): Uint8Array[] {
         return this.failed;
     }
 
     /**
      * Get remaining SysEx buffer
      */
-    get remainingSysExBuffer() {
+    get remainingSysExBuffer(): number[] {
         return this.sysExBuffer;
     }
 
