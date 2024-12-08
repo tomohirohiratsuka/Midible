@@ -1,6 +1,6 @@
 import {MidiStatus} from "@/models/MidiStatus.ts";
 import {isBit7Set} from "@/utils/isBit7Set.ts";
-import {MidiPacketQueue} from "@/analyzers/MidiPacketQue.ts";
+import {MidiPacketQueue} from "@/analyzers/MidiPacketQueue.ts";
 import {BleMidiHeader} from "@/models/ble/BleMidiHeader.ts";
 import {BleMidiTimestamp} from "@/models/ble/BleMidiTimestamp.ts";
 import {MidiMessage} from "@/models/MidiMessage.ts";
