@@ -2,7 +2,6 @@
 
 **Midible** is a lightweight JavaScript library for handling MIDI over Bluetooth Low Energy (BLE) in the browser. It enables you to connect, record, and play MIDI events using BLE MIDI devices, providing a seamless experience for MIDI interaction directly in the browser.
 
----
 
 ## Features
 
@@ -11,7 +10,7 @@
 - Record MIDI events with timestamps.
 - Supports real-time MIDI message handling.
 
----
+
 
 ## Installation
 
@@ -27,7 +26,6 @@ Or include the ES module directly:
 <script type="module" src="path-to/midible.es.js"></script>
 ```
 
----
 
 ## Getting Started
 
@@ -36,7 +34,7 @@ Or include the ES module directly:
 - A BLE MIDI-compatible device.
 - A browser that supports Web Bluetooth API (e.g., Chrome, Edge).
 
----
+
 
 ## Usage
 
@@ -60,7 +58,7 @@ async function connectToDevice() {
 - The `connect` method requires a user gesture to show the permission request dialog.
   - `SecurityError: Failed to execute 'requestDevice' on 'Bluetooth': Must be handling a user gesture to show a permission request.`
 
----
+
 
 ### 2. Handling MIDI Messages
 
@@ -80,7 +78,7 @@ characteristic.addEventListener('characteristicvaluechanged', (event) => {
 });
 ```
 
----
+
 
 
 
@@ -97,7 +95,7 @@ console.log('SysEx Buffer:', parser.remainingSysExBuffer);
 console.log('Processed SysEx Messages:', parser.processedMessages);
 ```
 
----
+
 
 ## API Reference
 
@@ -105,12 +103,12 @@ console.log('Processed SysEx Messages:', parser.processedMessages);
 - **`static async connect(options?: RequestDeviceOptions): Promise<BluetoothDevice>`**
   - Connects to a BLE MIDI device using the Web Bluetooth API.
 
----
+
 
 ### **`MidiPacketParser`**
 The `MidiPacketParser` class provides functionality to parse, process, and manage MIDI packets, including System Exclusive (SysEx) messages. Below is a detailed explanation of the public methods and properties:
 
----
+
 
 #### **Getters**
 
@@ -126,7 +124,7 @@ The `MidiPacketParser` class provides functionality to parse, process, and manag
   - **Description**: Returns the current state of the buffer for System Exclusive (SysEx) messages.
   - **Use Case**: Use this to monitor or clear incomplete SysEx data that is awaiting completion.
 
----
+
 
 #### **Setters**
 
@@ -138,7 +136,7 @@ The `MidiPacketParser` class provides functionality to parse, process, and manag
   - **Description**: Accepts a single `DataView` packet and appends it to the internal queue.
   - **Use Case**: Use this to add individual packets dynamically, such as when receiving real-time data from a BLE MIDI device.
 
----
+
 
 #### **Methods**
 
@@ -154,9 +152,9 @@ The `MidiPacketParser` class provides functionality to parse, process, and manag
   - **Description**: Parses a single MIDI packet represented as a `Uint8Array` and processes its data. Handles both normal MIDI messages and SysEx messages.
   - **Use Case**: Use this for real-time parsing of MIDI packets as they are received from a BLE MIDI device.
 
----
 
----
+
+
 
 ### Constants
 
@@ -165,7 +163,7 @@ The `MidiPacketParser` class provides functionality to parse, process, and manag
 - **`MIDI_IO_CHARACTERISTIC_UID`**
   - UUID for the MIDI I/O characteristic.
 
----
+
 
 ## Example Project
 
@@ -175,13 +173,13 @@ Here’s a simple example project to get started:
 3. Run `npm run build` to build the project.
 4. Open `example/index.html` in a browser that supports Web Bluetooth API.
 
----
+
 
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request.
 
----
+
 
 ## License
 
