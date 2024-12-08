@@ -13,9 +13,11 @@ const NoteNameList = [
     "B"
 ] as const;
 
-export type NoteName =
-    typeof NoteNameList[number] extends `${infer A},${infer B}` ? A | B :
-        typeof NoteNameList[number];
+type NoteNameUnion = {
+    [K in typeof NoteNameList[number]]: K extends `${infer A},${infer B}` ? A | B : K
+}[typeof NoteNameList[number]];
+
+export type NoteName = NoteNameUnion;
 
 export type Octave = -1 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
