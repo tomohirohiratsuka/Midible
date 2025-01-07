@@ -1,7 +1,7 @@
 {
   "name": "midible",
   "private": false,
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Midible is a library for handling MIDI over Bluetooth Low Energy (BLE) in the browser.",
   "keywords": [
     "MIDI",
@@ -14,14 +14,14 @@
   },
   "author": "tomohiro.hiratsuka",
   "license": "MIT",
-  "main": "dist/midible.umd.js",
+  "main": "dist/midible.cjs.js",
   "module": "dist/midible.es.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/midible.es.js",
-      "require": "./dist/midible.umd.js"
+      "require": "./dist/midible.cjs.js"
     }
   },
   "scripts": {

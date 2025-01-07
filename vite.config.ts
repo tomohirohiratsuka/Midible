@@ -9,7 +9,7 @@ export default defineConfig({
             entry: 'src/index.ts',
             name: 'Midible',
             fileName: (format) => `midible.${format}.js`,
-            formats: ['es', 'umd'],
+            formats: ['es', 'umd', 'cjs'],
         },
         rollupOptions: {
             external: [],
